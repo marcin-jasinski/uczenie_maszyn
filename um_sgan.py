@@ -1,5 +1,9 @@
 import os
+import math
 import numpy as np
+import pandas as pd
+
+from sklearn.model_selection import StratifiedShuffleSplit
 
 from matplotlib import image
 from matplotlib import pyplot
@@ -11,7 +15,7 @@ from numpy import asarray
 from numpy.random import randn
 from numpy.random import randint
 
-from keras import backend
+from keras import backend as K
 from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import Reshape
@@ -25,9 +29,35 @@ from keras.layers import Activation
 from keras.models import Model
 from keras.optimizers import Adam
 
+results = []
+model_names = []
+
+def recall_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+
+def precision_m(y_true, y_pred):
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+def f1_m(precision, recall):
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+
+def g_mean_m(precision, recall):
+    g_mean = math.sqrt(precision * recall)
+    return g_mean
+
+def bac_m(precision, recall):
+    bac = (precision + recall) / 2
+    return bac
+
 # custom activation function
 def custom_activation(output):
-    logexpsum = backend.sum(backend.exp(output), axis=-1, keepdims=True)
+    logexpsum = K.sum(K.exp(output), axis=-1, keepdims=True)
     result = logexpsum / (logexpsum + 1.0)
     return result
 
@@ -56,7 +86,7 @@ def define_discriminator(in_shape=(64,64,1), n_classes=2):
     c_model = Model(in_image, c_out_layer)
     c_model.compile(loss='sparse_categorical_crossentropy',
                      optimizer=Adam(lr=0.0002, beta_1=0.5),
-                     metrics=['accuracy'])
+                     metrics=['accuracy', precision_m, recall_m])
     # unsupervised output
     d_out_layer = Lambda(custom_activation)(fe)
     # define and compile unsupervised discriminator model
@@ -98,27 +128,34 @@ def define_gan(g_model, d_model):
 # load the images
 def load_real_samples(inputDir):
 
-    trainX = []
-    trainy = []
+    X = []
+    y = []
 
     for filename in os.listdir(inputDir):
         img = image.imread(inputDir+filename)
         data = asarray(img)
 
-        trainX.append(data)
+        X.append(data)
 
         if "Normal" in filename:
-            trainy.append(0)
+            y.append(0)
         else:
-            trainy.append(1)
+            y.append(1)
 
-    X = expand_dims(trainX, axis=-1)
-	# convert from ints to floats
+    X = expand_dims(X, axis=-1)
     X = X.astype('float32')
-	# scale from [0,255] to [-1,1]
     X = (X - 127.5) / 127.5
+
+    y = np.asarray(y)
+
+    shuffle = StratifiedShuffleSplit(n_splits=1, test_size=0.2)
+
+    for train_index, test_index in shuffle.split(X, y):
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+
     # print(X.shape, trainy.shape)
-    return [X, np.asarray(trainy)]
+    return [X_train, np.asarray(y_train)], X_test, y_test
 
 # select a supervised subset of the dataset, ensures classes are balanced
 def select_supervised_samples(dataset, samples_per_class):
@@ -134,6 +171,7 @@ def select_supervised_samples(dataset, samples_per_class):
         # add to list
         [X_list.append(X_with_class[j]) for j in ix]
         [y_list.append(i) for j in ix]
+
     return asarray(X_list), asarray(y_list)
 
 # select real samples
@@ -188,7 +226,7 @@ def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_nam
 
     # evaluate the classifier model
     X, y = dataset
-    _, acc = c_model.evaluate(X, y, verbose=0)
+    _, acc, prec, recall = c_model.evaluate(X, y, verbose=0)
     print('Classifier Accuracy: %.3f%%' % (acc * 100))
 
     # save the generator model
@@ -196,13 +234,13 @@ def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_nam
     # g_model.save(filename2)
 
     # save the classifier model
-    filename3 = 'c_model_%s.h5' % (model_name)
+    filename3 = 'models/c_model_%s.h5' % (model_name)
     c_model.save(filename3)
     print('>Saved: %s' % (model_name))
 
 # train the generator and discriminator
 def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per_class, model_name,
-                                                                           n_epochs=50, n_batch=16):
+                                                                           n_epochs=50, n_batch=128):
     # select supervised dataset
     X_sup, y_sup = select_supervised_samples(dataset, samples_per_class)
     print(X_sup.shape, y_sup.shape)
@@ -218,7 +256,7 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
     for i in range(n_steps):
         # update supervised discriminator (c)
         [Xsup_real, ysup_real], _ = generate_real_samples([X_sup, y_sup], half_batch)
-        c_loss, c_acc = c_model.train_on_batch(Xsup_real, ysup_real)
+        c_loss, c_acc, c_prec, c_recall = c_model.train_on_batch(Xsup_real, ysup_real)
         # update unsupervised discriminator (d)
         [X_real, _], y_real = generate_real_samples(dataset, half_batch)
         d_loss1 = d_model.train_on_batch(X_real, y_real)
@@ -234,25 +272,27 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
         if i == n_steps -1:
             summarize_performance(i, g_model, c_model, latent_dim, dataset, model_name)
 
+def evaluate_score(model, model_name, test_X, test_y):
+    loss, accuracy, precision, recall = model.evaluate(test_X, test_y, verbose=0)
+
+    bac = bac_m(precision, recall)
+    f1_score = f1_m(precision, recall)
+    gmean = g_mean_m(precision, recall)
+
+    results.append([bac, f1_score, gmean])
+    model_names.append(model_name)
+
 # size of the latent space
 latent_dim = 100
 
-backend.clear_session()
-# create the discriminator models
-d_model, c_model = define_discriminator()
-# create the generator
-g_model = define_generator(latent_dim)
-# create the gan
-gan_model = define_gan(g_model, d_model)
-
 print("[INFO] Training SGAN on unbalanced dataset")
 # load image data
-dataset = load_real_samples("./20_80/")
+dataset, test_X, test_y = load_real_samples("./20_80/")
 ratios_unbalanced = [[13, 50], [25, 100], [50, 200], [100, 400]]
 
 for ratio in ratios_unbalanced:
     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
-    backend.clear_session()
+    K.clear_session()
     # create the discriminator models
     d_model, c_model = define_discriminator()
     # create the generator
@@ -263,16 +303,18 @@ for ratio in ratios_unbalanced:
     model_name = "_unbalanced_%s_%s" % (ratio[0], ratio[1])
     # train model
     train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
+    #evaluate model
+    evaluate_score(c_model, model_name, test_X, test_y)
 
 print("[INFO] Training SGAN on balanced dataset")
 # load image data
-dataset = load_real_samples("./50_50/")
+dataset, test_X, test_y = load_real_samples("./50_50/")
 ratios_balanced = [[50, 50], [100, 100], [200, 200], [400, 400]]
 
 # train model
 for ratio in ratios_balanced:
     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
-    backend.clear_session()
+    K.clear_session()
     # create the discriminator models
     d_model, c_model = define_discriminator()
     # create the generator
@@ -280,6 +322,12 @@ for ratio in ratios_balanced:
     # create the gan
     gan_model = define_gan(g_model, d_model)
     # model name
-    model_name = "_unbalanced_" + ratio[0] + "_" + ratio[1]
+    model_name = "_balanced_%s_%s" % (ratio[0], ratio[1])
     # train model
     train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
+    #evaluate model
+    evaluate_score(c_model, model_name, test_X, test_y)
+
+df = pd.DataFrame(results, columns = ['BAC','F1-Score','G-Mean'], index = model_names)
+df.to_csv(model_name + '_results.csv', index=True)
+print(df)

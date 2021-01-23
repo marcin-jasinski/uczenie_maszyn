@@ -4,6 +4,7 @@ import os, sys
 paths = [
     "./20_80/",
     "./50_50/",
+    "./test_set/"
     ]
 
 def resize():
