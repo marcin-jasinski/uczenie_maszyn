@@ -14,21 +14,24 @@ from skimage.feature import greycomatrix
 
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.svm import SVC
-from sklearn.metrics import precision_score, recall_score
+from sklearn.metrics import precision_score, recall_score, f1_score, balanced_accuracy_score
+from imblearn.metrics import geometric_mean_score
 
 results = []
 model_names = []
 
-def f1_m(precision, recall):
-    return 2 * (precision * recall) / (precision + recall)
 
-def g_mean_m(precision, recall):
-    g_mean = math.sqrt(precision * recall)
-    return g_mean
+def f1_m(y_true, y_pred):
+    return f1_score(y_true, y_pred, average='macro')
 
-def bac_m(precision, recall):
-    bac = (precision + recall) / 2
-    return bac
+
+def g_mean_m(y_true, y_pred):
+    return geometric_mean_score(y_true, y_pred, average='macro')
+
+
+def bac_m(y_true, y_pred):
+    return balanced_accuracy_score(y_true, y_pred)
+
 
 def load_real_samples(inputDir):
 
@@ -36,9 +39,10 @@ def load_real_samples(inputDir):
     y = []
 
     # GLCM distances & angles (in radians)
-    distances = [1,2]
+    distances = [1, 2]
     angles = [0, np.pi/4, np.pi/2, np.pi * 0.75]
-    props = ["contrast", "dissimilarity", "homogeneity", "ASM", "energy", "correlation"]
+    props = ["contrast", "dissimilarity",
+             "homogeneity", "ASM", "energy", "correlation"]
 
     print("[INFO] Processing images")
 
@@ -64,8 +68,10 @@ def load_real_samples(inputDir):
         img_array = np.asarray(grayscale, dtype=np.uint8)
 
         # GLCM
-        g_matrix = greycomatrix(img_array, distances, angles, normed=True, symmetric=True)
-        img_features = np.ravel([np.ravel(greycoprops(g_matrix, prop)) for prop in props]).T
+        g_matrix = greycomatrix(img_array, distances,
+                                angles, normed=True, symmetric=True)
+        img_features = np.ravel(
+            [np.ravel(greycoprops(g_matrix, prop)) for prop in props]).T
 
         X.append(img_features)
 
@@ -88,6 +94,7 @@ def load_real_samples(inputDir):
     # print(X.shape, trainy.shape)
     return [X_train, y_train.astype('float32')], X_test, y_test.astype('float32')
 
+
 def select_supervised_samples(dataset, samples_per_class):
     X, y = dataset
     y = np.asarray(y, dtype=np.uint8)
@@ -108,6 +115,7 @@ def select_supervised_samples(dataset, samples_per_class):
 
     return np.asarray(X_list), np.asarray(y_list), np.asarray(U_list)
 
+
 print("[INFO] Reading unbalanced dataset")
 dataset, X_test, y_test = load_real_samples("./20_80/")
 
@@ -124,21 +132,23 @@ for ratio in ratios_unbalanced:
     X_train, y_train = X_sup, y_sup
     while unlabeled_samples.shape != (0, 48):
         clf.fit(X_train, y_train)
-        samp, unlabeled_samples = unlabeled_samples[-1].reshape(1, -1), unlabeled_samples[:-1]
+        samp, unlabeled_samples = unlabeled_samples[-1].reshape(
+            1, -1), unlabeled_samples[:-1]
         y_pred = clf.predict(samp)
         X_train = np.append(X_train, samp, axis=0)
         y_train = np.append(y_train, y_pred)
         if unlabeled_samples.shape[0] % 100 == 0:
-            print("[INFO] Unlabeled set size: %d" % (unlabeled_samples.shape[0]))
+            print("[INFO] Unlabeled set size: %d" %
+                  (unlabeled_samples.shape[0]))
 
     y_pred = clf.predict(X_test).astype('float32')
 
     prec = precision_score(y_test, y_pred)
-    rec= recall_score(y_test, y_pred)
+    rec = recall_score(y_test, y_pred)
 
-    bac = bac_m(prec, rec)
-    f1_score = f1_m(prec, rec)
-    gmean = g_mean_m(prec, rec)
+    bac = bac_m(y_test, y_pred)
+    f1_score = f1_m(y_test, y_pred)
+    gmean = g_mean_m(y_test, y_pred)
 
     results.append([bac, f1_score, gmean])
     model_names.append(model_name)
@@ -159,25 +169,28 @@ for ratio in ratios_balanced:
     X_train, y_train = X_sup, y_sup
     while unlabeled_samples.shape != (0, 48):
         clf.fit(X_train, y_train)
-        samp, unlabeled_samples = unlabeled_samples[-1].reshape(1, -1), unlabeled_samples[:-1]
+        samp, unlabeled_samples = unlabeled_samples[-1].reshape(
+            1, -1), unlabeled_samples[:-1]
         y_pred = clf.predict(samp)
         X_train = np.append(X_train, samp, axis=0)
         y_train = np.append(y_train, y_pred)
         if unlabeled_samples.shape[0] % 100 == 0:
-            print("[INFO] Unlabeled set size: %d" % (unlabeled_samples.shape[0]))
+            print("[INFO] Unlabeled set size: %d" %
+                  (unlabeled_samples.shape[0]))
 
     y_pred = clf.predict(X_test).astype('float32')
 
     prec = precision_score(y_test, y_pred)
-    rec= recall_score(y_test, y_pred)
+    rec = recall_score(y_test, y_pred)
 
-    bac = bac_m(prec, rec)
-    f1_score = f1_m(prec, rec)
-    gmean = g_mean_m(prec, rec)
+    bac = bac_m(y_test, y_pred)
+    f1_score = f1_m(y_test, y_pred)
+    gmean = g_mean_m(y_test, y_pred)
 
     results.append([bac, f1_score, gmean])
     model_names.append(model_name)
 
-df = pd.DataFrame(results, columns = ['BAC','F1-Score','G-Mean'], index = model_names)
+df = pd.DataFrame(results, columns=[
+                  'BAC', 'F1-Score', 'G-Mean'], index=model_names)
 df.to_csv('svm_results.csv', index=True)
 print(df)

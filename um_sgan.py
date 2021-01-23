@@ -29,6 +29,9 @@ from keras.layers import Activation
 from keras.models import Model
 from keras.optimizers import Adam
 
+from sklearn.metrics import f1_score, balanced_accuracy_score
+from imblearn.metrics import geometric_mean_score
+
 results = []
 model_names = []
 
@@ -44,16 +47,17 @@ def precision_m(y_true, y_pred):
     precision = true_positives / (predicted_positives + K.epsilon())
     return precision
 
-def f1_m(precision, recall):
-    return 2 * (precision * recall) / (precision + recall)
 
-def g_mean_m(precision, recall):
-    g_mean = math.sqrt(precision * recall)
-    return g_mean
+def f1_m(y_true, y_pred):
+    return f1_score(y_true, y_pred, average='macro')
 
-def bac_m(precision, recall):
-    bac = (precision + recall) / 2
-    return bac
+
+def g_mean_m(y_true, y_pred):
+    return geometric_mean_score(y_true, y_pred, average='macro')
+
+
+def bac_m(y_true, y_pred):
+    return balanced_accuracy_score(y_true, y_pred)
 
 # custom activation function
 def custom_activation(output):
@@ -62,17 +66,19 @@ def custom_activation(output):
     return result
 
 # define the standalone supervised and unsupervised discriminator models
-def define_discriminator(in_shape=(64,64,1), n_classes=2):
+
+
+def define_discriminator(in_shape=(64, 64, 1), n_classes=2):
     # image input
     in_image = Input(shape=in_shape)
     # downsample
-    fe = Conv2D(128, (3,3), strides=(2,2), padding='same')(in_image)
+    fe = Conv2D(128, (3, 3), strides=(2, 2), padding='same')(in_image)
     fe = LeakyReLU(alpha=0.2)(fe)
     # downsample
-    fe = Conv2D(128, (3,3), strides=(2,2), padding='same')(fe)
+    fe = Conv2D(128, (3, 3), strides=(2, 2), padding='same')(fe)
     fe = LeakyReLU(alpha=0.2)(fe)
     # downsample
-    fe = Conv2D(128, (3,3), strides=(2,2), padding='same')(fe)
+    fe = Conv2D(128, (3, 3), strides=(2, 2), padding='same')(fe)
     fe = LeakyReLU(alpha=0.2)(fe)
     # flatten feature maps
     fe = Flatten()(fe)
@@ -85,16 +91,19 @@ def define_discriminator(in_shape=(64,64,1), n_classes=2):
     # define and compile supervised discriminator model
     c_model = Model(in_image, c_out_layer)
     c_model.compile(loss='sparse_categorical_crossentropy',
-                     optimizer=Adam(lr=0.0002, beta_1=0.5),
-                     metrics=['accuracy', precision_m, recall_m])
+                    optimizer=Adam(lr=0.0002, beta_1=0.5),
+                    metrics=['accuracy', precision_m, recall_m])
     # unsupervised output
     d_out_layer = Lambda(custom_activation)(fe)
     # define and compile unsupervised discriminator model
     d_model = Model(in_image, d_out_layer)
-    d_model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0002, beta_1=0.5))
+    d_model.compile(loss='binary_crossentropy',
+                    optimizer=Adam(lr=0.0002, beta_1=0.5))
     return d_model, c_model
 
 # define the standalone generator model
+
+
 def define_generator(latent_dim):
     # image generator input
     in_lat = Input(shape=(latent_dim,))
@@ -104,15 +113,17 @@ def define_generator(latent_dim):
     gen = LeakyReLU(alpha=0.2)(gen)
     gen = Reshape((32, 32, 128))(gen)
     # upsample to 64x64
-    gen = Conv2DTranspose(128, (4,4), strides=(2,2), padding='same')(gen)
+    gen = Conv2DTranspose(128, (4, 4), strides=(2, 2), padding='same')(gen)
     gen = LeakyReLU(alpha=0.2)(gen)
     # output
-    out_layer = Conv2D(1, (32,32), activation='tanh', padding='same')(gen)
+    out_layer = Conv2D(1, (32, 32), activation='tanh', padding='same')(gen)
     # define model
     model = Model(in_lat, out_layer)
     return model
 
 # define the combined generator and discriminator model, for updating the generator
+
+
 def define_gan(g_model, d_model):
     # make weights in the discriminator not trainable
     d_model.trainable = False
@@ -126,6 +137,8 @@ def define_gan(g_model, d_model):
     return model
 
 # load the images
+
+
 def load_real_samples(inputDir):
 
     X = []
@@ -158,6 +171,8 @@ def load_real_samples(inputDir):
     return [X_train, np.asarray(y_train)], X_test, y_test
 
 # select a supervised subset of the dataset, ensures classes are balanced
+
+
 def select_supervised_samples(dataset, samples_per_class):
     X, y = dataset
     y = np.asarray(y, dtype=np.uint8)
@@ -175,6 +190,8 @@ def select_supervised_samples(dataset, samples_per_class):
     return asarray(X_list), asarray(y_list)
 
 # select real samples
+
+
 def generate_real_samples(dataset, n_samples):
     # split into images and labels
     images, labels = dataset
@@ -187,6 +204,8 @@ def generate_real_samples(dataset, n_samples):
     return [X, labels], y
 
 # generate points in latent space as input for the generator
+
+
 def generate_latent_points(latent_dim, n_samples):
     # generate points in the latent space
     z_input = randn(latent_dim * n_samples)
@@ -195,6 +214,8 @@ def generate_latent_points(latent_dim, n_samples):
     return z_input
 
 # use the generator to generate n fake examples, with class labels
+
+
 def generate_fake_samples(generator, latent_dim, n_samples):
     # generate points in latent space
     z_input = generate_latent_points(latent_dim, n_samples)
@@ -205,6 +226,8 @@ def generate_fake_samples(generator, latent_dim, n_samples):
     return images, y
 
 # generate samples and save as a plot and save the model
+
+
 def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_name, n_samples=16):
     # prepare fake examples
     X, _ = generate_fake_samples(g_model, latent_dim, n_samples)
@@ -239,8 +262,10 @@ def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_nam
     print('>Saved: %s' % (model_name))
 
 # train the generator and discriminator
+
+
 def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per_class, model_name,
-                                                                           n_epochs=50, n_batch=128):
+          n_epochs=50, n_batch=128):
     # select supervised dataset
     X_sup, y_sup = select_supervised_samples(dataset, samples_per_class)
     print(X_sup.shape, y_sup.shape)
@@ -251,36 +276,44 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
     # calculate the size of half a batch of samples
     half_batch = int(n_batch / 2)
     print('n_epochs=%d, n_batch=%d, 1/2=%d, b/e=%d, steps=%d'
-       % (n_epochs, n_batch, half_batch, bat_per_epo, n_steps))
+          % (n_epochs, n_batch, half_batch, bat_per_epo, n_steps))
     # manually enumerate epochs
     for i in range(n_steps):
         # update supervised discriminator (c)
-        [Xsup_real, ysup_real], _ = generate_real_samples([X_sup, y_sup], half_batch)
-        c_loss, c_acc, c_prec, c_recall = c_model.train_on_batch(Xsup_real, ysup_real)
+        [Xsup_real, ysup_real], _ = generate_real_samples(
+            [X_sup, y_sup], half_batch)
+        c_loss, c_acc, c_prec, c_recall = c_model.train_on_batch(
+            Xsup_real, ysup_real)
         # update unsupervised discriminator (d)
         [X_real, _], y_real = generate_real_samples(dataset, half_batch)
         d_loss1 = d_model.train_on_batch(X_real, y_real)
         X_fake, y_fake = generate_fake_samples(g_model, latent_dim, half_batch)
         d_loss2 = d_model.train_on_batch(X_fake, y_fake)
         # update generator (g)
-        X_gan, y_gan = generate_latent_points(latent_dim, n_batch), ones((n_batch, 1))
+        X_gan, y_gan = generate_latent_points(
+            latent_dim, n_batch), ones((n_batch, 1))
         g_loss = gan_model.train_on_batch(X_gan, y_gan)
         # summarize loss on this batch
         print('>%d, c[%.3f,%.0f], d[%.3f,%.3f], g[%.3f]'
-            % (i+1, c_loss, c_acc*100, d_loss1, d_loss2, g_loss))
+              % (i+1, c_loss, c_acc*100, d_loss1, d_loss2, g_loss))
         # evaluate the model performance
-        if i == n_steps -1:
-            summarize_performance(i, g_model, c_model, latent_dim, dataset, model_name)
+        if i == n_steps - 1:
+            summarize_performance(i, g_model, c_model,
+                                  latent_dim, dataset, model_name)
+
 
 def evaluate_score(model, model_name, test_X, test_y):
-    loss, accuracy, precision, recall = model.evaluate(test_X, test_y, verbose=0)
+    # TODO: coś nie teges szmeges test setami
+    loss, accuracy, precision, recall = model.evaluate(
+        test_X, test_y, verbose=0)
 
-    bac = bac_m(precision, recall)
-    f1_score = f1_m(precision, recall)
-    gmean = g_mean_m(precision, recall)
+    bac = bac_m(test_X, test_y)
+    f1_score = f1_m(test_X, test_y)
+    gmean = g_mean_m(test_X, test_y)
 
     results.append([bac, f1_score, gmean])
     model_names.append(model_name)
+
 
 # size of the latent space
 latent_dim = 100
@@ -303,8 +336,9 @@ for ratio in ratios_unbalanced:
     # model name
     model_name = "_unbalanced_%s_%s" % (ratio[0], ratio[1])
     # train model
-    train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
-    #evaluate model
+    train(g_model, d_model, c_model, gan_model,
+          dataset, latent_dim, ratio, model_name)
+    # evaluate model
     evaluate_score(c_model, model_name, test_X, test_y)
 
 print("[INFO] Training SGAN on balanced dataset")
@@ -326,10 +360,12 @@ for ratio in ratios_balanced:
     # model name
     model_name = "_balanced_%s_%s" % (ratio[0], ratio[1])
     # train model
-    train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
-    #evaluate model
+    train(g_model, d_model, c_model, gan_model,
+          dataset, latent_dim, ratio, model_name)
+    # evaluate model
     evaluate_score(c_model, model_name, test_X, test_y)
 
-df = pd.DataFrame(results, columns = ['BAC','F1-Score','G-Mean'], index = model_names)
+df = pd.DataFrame(results, columns=[
+                  'BAC', 'F1-Score', 'G-Mean'], index=model_names)
 df.to_csv('sgan_results.csv', index=True)
 print(df)
