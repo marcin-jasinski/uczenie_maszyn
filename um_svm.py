@@ -14,27 +14,27 @@ from skimage.feature import greycomatrix
 
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.svm import SVC
-from sklearn.metrics import precision_score, recall_score, f1_score, balanced_accuracy_score
-from imblearn.metrics import geometric_mean_score
+from sklearn import metrics
+from sklearn.metrics import precision_score, recall_score, balanced_accuracy_score
+import imblearn.metrics as imbmetrics
 
 results = []
 model_names = []
 
 
 def f1_m(y_true, y_pred):
-    return f1_score(y_true, y_pred, average='macro')
+    return metrics.f1_score(y_true, y_pred, average='macro')
 
 
 def g_mean_m(y_true, y_pred):
-    return geometric_mean_score(y_true, y_pred, average='macro')
+    return imbmetrics.geometric_mean_score(y_true, y_pred, average='macro')
 
 
 def bac_m(y_true, y_pred):
-    return balanced_accuracy_score(y_true, y_pred)
+    return metrics.balanced_accuracy_score(y_true, y_pred)
 
 
 def load_real_samples(inputDir):
-
     X = []
     y = []
 
@@ -141,7 +141,7 @@ for ratio in ratios_unbalanced:
             print("[INFO] Unlabeled set size: %d" %
                   (unlabeled_samples.shape[0]))
 
-    y_pred = clf.predict(X_test).astype('float32')
+    y_pred = clf.predict(X_test)
 
     prec = precision_score(y_test, y_pred)
     rec = recall_score(y_test, y_pred)

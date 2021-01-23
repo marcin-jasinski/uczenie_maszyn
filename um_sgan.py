@@ -29,8 +29,8 @@ from keras.layers import Activation
 from keras.models import Model
 from keras.optimizers import Adam
 
-from sklearn.metrics import f1_score, balanced_accuracy_score
-from imblearn.metrics import geometric_mean_score
+from sklearn import metrics
+import imblearn.metrics as imbmetrics
 
 results = []
 model_names = []
@@ -51,15 +51,15 @@ def precision_m(y_true, y_pred):
 
 
 def f1_m(y_true, y_pred):
-    return f1_score(y_true, y_pred, average='macro')
+    return metrics.f1_score(y_true, y_pred, average='macro')
 
 
 def g_mean_m(y_true, y_pred):
-    return geometric_mean_score(y_true, y_pred, average='macro')
+    return imbmetrics.geometric_mean_score(y_true, y_pred, average='macro')
 
 
 def bac_m(y_true, y_pred):
-    return balanced_accuracy_score(y_true, y_pred)
+    return metrics.balanced_accuracy_score(y_true, y_pred)
 
 # custom activation function
 
