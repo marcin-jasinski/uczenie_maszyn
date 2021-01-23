@@ -286,12 +286,13 @@ def evaluate_score(model, model_name, test_X, test_y):
 latent_dim = 100
 
 print("[INFO] Training SGAN on unbalanced dataset")
+
 # load image data
-dataset, test_X, test_y = load_real_samples("./20_80/")
 ratios_unbalanced = [[13, 50], [25, 100], [50, 200], [100, 400]]
 
 for ratio in ratios_unbalanced:
     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
+    dataset, test_X, test_y = load_real_samples("./20_80/")
     K.clear_session()
     # create the discriminator models
     d_model, c_model = define_discriminator()
@@ -307,13 +308,14 @@ for ratio in ratios_unbalanced:
     evaluate_score(c_model, model_name, test_X, test_y)
 
 print("[INFO] Training SGAN on balanced dataset")
+
 # load image data
-dataset, test_X, test_y = load_real_samples("./50_50/")
 ratios_balanced = [[50, 50], [100, 100], [200, 200], [400, 400]]
 
 # train model
 for ratio in ratios_balanced:
     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
+    dataset, test_X, test_y = load_real_samples("./50_50/")
     K.clear_session()
     # create the discriminator models
     d_model, c_model = define_discriminator()
@@ -329,5 +331,5 @@ for ratio in ratios_balanced:
     evaluate_score(c_model, model_name, test_X, test_y)
 
 df = pd.DataFrame(results, columns = ['BAC','F1-Score','G-Mean'], index = model_names)
-df.to_csv(model_name + '_results.csv', index=True)
+df.to_csv('sgan_results.csv', index=True)
 print(df)
