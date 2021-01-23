@@ -35,11 +35,13 @@ from imblearn.metrics import geometric_mean_score
 results = []
 model_names = []
 
+
 def recall_m(y_true, y_pred):
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
+
 
 def precision_m(y_true, y_pred):
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
@@ -60,6 +62,8 @@ def bac_m(y_true, y_pred):
     return balanced_accuracy_score(y_true, y_pred)
 
 # custom activation function
+
+
 def custom_activation(output):
     logexpsum = K.sum(K.exp(output), axis=-1, keepdims=True)
     result = logexpsum / (logexpsum + 1.0)
@@ -303,13 +307,12 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
 
 
 def evaluate_score(model, model_name, test_X, test_y):
-    # TODO: coś nie teges szmeges test setami
-    loss, accuracy, precision, recall = model.evaluate(
-        test_X, test_y, verbose=0)
+    y_pred = model.predict(
+        test_X, test_y)
 
-    bac = bac_m(test_X, test_y)
-    f1_score = f1_m(test_X, test_y)
-    gmean = g_mean_m(test_X, test_y)
+    bac = bac_m(test_y, y_pred)
+    f1_score = f1_m(test_y, y_pred)
+    gmean = g_mean_m(test_y, y_pred)
 
     results.append([bac, f1_score, gmean])
     model_names.append(model_name)
