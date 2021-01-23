@@ -1,13 +1,17 @@
-# example of semi-supervised gan for mnist
+import os
+import numpy as np
+
+from matplotlib import image
+from matplotlib import pyplot
+
 from numpy import expand_dims
 from numpy import zeros
 from numpy import ones
 from numpy import asarray
 from numpy.random import randn
 from numpy.random import randint
-from keras.datasets.mnist import load_data
-from keras.optimizers import Adam
-from keras.models import Model
+
+from keras import backend
 from keras.layers import Input
 from keras.layers import Dense
 from keras.layers import Reshape
@@ -18,12 +22,8 @@ from keras.layers import LeakyReLU
 from keras.layers import Dropout
 from keras.layers import Lambda
 from keras.layers import Activation
-from matplotlib import pyplot
-from keras import backend
-from keras.utils.vis_utils import plot_model
-import os
-import numpy as np
-from matplotlib import image
+from keras.models import Model
+from keras.optimizers import Adam
 
 # custom activation function
 def custom_activation(output):
@@ -32,7 +32,7 @@ def custom_activation(output):
     return result
 
 # define the standalone supervised and unsupervised discriminator models
-def define_discriminator(in_shape=(128,128,1), n_classes=2):
+def define_discriminator(in_shape=(64,64,1), n_classes=2):
     # image input
     in_image = Input(shape=in_shape)
     # downsample
@@ -62,39 +62,24 @@ def define_discriminator(in_shape=(128,128,1), n_classes=2):
     # define and compile unsupervised discriminator model
     d_model = Model(in_image, d_out_layer)
     d_model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0002, beta_1=0.5))
-    plot_model(d_model, to_file='d_model.png',
-                           show_shapes=True, show_layer_names=True)
-    plot_model(c_model, to_file='c_model.png',
-                           show_shapes=True, show_layer_names=True)
     return d_model, c_model
 
 # define the standalone generator model
 def define_generator(latent_dim):
     # image generator input
     in_lat = Input(shape=(latent_dim,))
-    # foundation for 8x8 image
-    n_nodes = 128 * 8 * 8
+    # foundation for 32x32 image
+    n_nodes = 128 * 32 * 32
     gen = Dense(n_nodes)(in_lat)
     gen = LeakyReLU(alpha=0.2)(gen)
-    gen = Reshape((8, 8, 128))(gen)
-    # upsample to 16x16
-    gen = Conv2DTranspose(128, (4,4), strides=(2,2), padding='same')(gen)
-    gen = LeakyReLU(alpha=0.2)(gen)
-    # upsample to 32x32
-    gen = Conv2DTranspose(128, (4,4), strides=(2,2), padding='same')(gen)
-    gen = LeakyReLU(alpha=0.2)(gen)
+    gen = Reshape((32, 32, 128))(gen)
     # upsample to 64x64
     gen = Conv2DTranspose(128, (4,4), strides=(2,2), padding='same')(gen)
     gen = LeakyReLU(alpha=0.2)(gen)
-    # upsample to 128x128
-    gen = Conv2DTranspose(128, (4,4), strides=(2,2), padding='same')(gen)
-    gen = LeakyReLU(alpha=0.2)(gen)
     # output
-    out_layer = Conv2D(1, (8,8), activation='tanh', padding='same')(gen)
+    out_layer = Conv2D(1, (32,32), activation='tanh', padding='same')(gen)
     # define model
     model = Model(in_lat, out_layer)
-    plot_model(model, to_file='generator.png',
-                           show_shapes=True, show_layer_names=True)
     return model
 
 # define the combined generator and discriminator model, for updating the generator
@@ -182,39 +167,44 @@ def generate_fake_samples(generator, latent_dim, n_samples):
     return images, y
 
 # generate samples and save as a plot and save the model
-def summarize_performance(step, g_model, c_model, latent_dim, dataset, n_samples=100):
+def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_name, n_samples=16):
     # prepare fake examples
     X, _ = generate_fake_samples(g_model, latent_dim, n_samples)
     # scale from [-1,1] to [0,1]
     X = (X + 1) / 2.0
     # plot images
-    for i in range(100):
+    for i in range(16):
         # define subplot
-        pyplot.subplot(10, 10, 1 + i)
+        pyplot.subplot(4, 4, 1 + i)
         # turn off axis
         pyplot.axis('off')
         # plot raw pixel data
         pyplot.imshow(X[i, :, :, 0], cmap='gray_r')
+
     # save plot to file
-    filename1 = 'generated_plot_%04d.png' % (step+1)
+    filename1 = './generated_plots/generated_plot_%s.png' % (model_name)
     pyplot.savefig(filename1)
     pyplot.close()
+
     # evaluate the classifier model
     X, y = dataset
     _, acc = c_model.evaluate(X, y, verbose=0)
     print('Classifier Accuracy: %.3f%%' % (acc * 100))
+
     # save the generator model
-    filename2 = 'g_model_%04d.h5' % (step+1)
-    g_model.save(filename2)
+    # filename2 = 'g_model_%04d.h5' % (step+1)
+    # g_model.save(filename2)
+
     # save the classifier model
-    filename3 = 'c_model_%04d.h5' % (step+1)
+    filename3 = 'c_model_%s.h5' % (model_name)
     c_model.save(filename3)
-    print('>Saved: %s, %s, and %s' % (filename1, filename2, filename3))
+    print('>Saved: %s' % (model_name))
 
 # train the generator and discriminator
-def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, n_epochs=20, n_batch=100):
+def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per_class, model_name,
+                                                                           n_epochs=50, n_batch=16):
     # select supervised dataset
-    X_sup, y_sup = select_supervised_samples(dataset)
+    X_sup, y_sup = select_supervised_samples(dataset, samples_per_class)
     print(X_sup.shape, y_sup.shape)
     # calculate the number of batches per training epoch
     bat_per_epo = int(dataset[0].shape[0] / n_batch)
@@ -240,12 +230,14 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, n_epochs=20
         # summarize loss on this batch
         print('>%d, c[%.3f,%.0f], d[%.3f,%.3f], g[%.3f]'
             % (i+1, c_loss, c_acc*100, d_loss1, d_loss2, g_loss))
-        # evaluate the model performance every so often
-        if (i+1) % (bat_per_epo * 1) == 0:
-            summarize_performance(i, g_model, c_model, latent_dim, dataset)
+        # evaluate the model performance
+        if i == n_steps -1:
+            summarize_performance(i, g_model, c_model, latent_dim, dataset, model_name)
 
 # size of the latent space
 latent_dim = 100
+
+backend.clear_session()
 # create the discriminator models
 d_model, c_model = define_discriminator()
 # create the generator
@@ -253,24 +245,41 @@ g_model = define_generator(latent_dim)
 # create the gan
 gan_model = define_gan(g_model, d_model)
 
-# print("[INFO] Training SGAN on unbalanced dataset")
-# # load image data
-# dataset = load_real_samples("./20_80/")
-# # ratios_unbalanced = [[13, 50], [25, 100], [50, 200], [100, 400]]
-# ratios_unbalanced = [[13, 50]]
+print("[INFO] Training SGAN on unbalanced dataset")
+# load image data
+dataset = load_real_samples("./20_80/")
+ratios_unbalanced = [[13, 50], [25, 100], [50, 200], [100, 400]]
 
-# for ratio in ratios_unbalanced:
-#     # train model
-#     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
-#     train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio)
+for ratio in ratios_unbalanced:
+    print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
+    backend.clear_session()
+    # create the discriminator models
+    d_model, c_model = define_discriminator()
+    # create the generator
+    g_model = define_generator(latent_dim)
+    # create the gan
+    gan_model = define_gan(g_model, d_model)
+    # model name
+    model_name = "_unbalanced_%s_%s" % (ratio[0], ratio[1])
+    # train model
+    train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
 
-# print("[INFO] Training SGAN on balanced dataset")
-# # load image data
-# dataset = load_real_samples("./50_50/")
-# ratios_balanced = [[50, 50], [100, 100], [200, 200], [400, 400]]
+print("[INFO] Training SGAN on balanced dataset")
+# load image data
+dataset = load_real_samples("./50_50/")
+ratios_balanced = [[50, 50], [100, 100], [200, 200], [400, 400]]
 
-# # train model
-# for ratio in ratios_balanced:
-#     # train model
-#     print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
-#     train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio)
+# train model
+for ratio in ratios_balanced:
+    print("[INFO] Samples ratio: %d" % ratio[0] + " : %d" % ratio[1])
+    backend.clear_session()
+    # create the discriminator models
+    d_model, c_model = define_discriminator()
+    # create the generator
+    g_model = define_generator(latent_dim)
+    # create the gan
+    gan_model = define_gan(g_model, d_model)
+    # model name
+    model_name = "_unbalanced_" + ratio[0] + "_" + ratio[1]
+    # train model
+    train(g_model, d_model, c_model, gan_model, dataset, latent_dim, ratio, model_name)
