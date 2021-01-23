@@ -20,7 +20,7 @@ results = []
 model_names = []
 
 def f1_m(precision, recall):
-    return 2*((precision*recall)/(precision+recall+1e-07))
+    return 2 * (precision * recall) / (precision + recall)
 
 def g_mean_m(precision, recall):
     g_mean = math.sqrt(precision * recall)
