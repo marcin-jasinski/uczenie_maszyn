@@ -14,7 +14,7 @@ def resize():
             if os.path.isfile(path+item):
                 im = Image.open(path+item).convert('L')
                 f, e = os.path.splitext(path+item)
-                imResize = im.resize((128,128), Image.ANTIALIAS)
+                imResize = im.resize((64,64), Image.ANTIALIAS)
                 imResize.save(f + '.jpg', 'JPEG', quality=100)
         print("Done.")
 
