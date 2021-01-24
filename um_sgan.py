@@ -238,18 +238,18 @@ def summarize_performance(step, g_model, c_model, latent_dim, dataset, model_nam
     # scale from [-1,1] to [0,1]
     X = (X + 1) / 2.0
     # plot images
-    for i in range(16):
-        # define subplot
-        pyplot.subplot(4, 4, 1 + i)
-        # turn off axis
-        pyplot.axis('off')
-        # plot raw pixel data
-        pyplot.imshow(X[i, :, :, 0], cmap='gray_r')
+    # for i in range(16):
+    #     # define subplot
+    #     pyplot.subplot(4, 4, 1 + i)
+    #     # turn off axis
+    #     pyplot.axis('off')
+    #     # plot raw pixel data
+    #     pyplot.imshow(X[i, :, :, 0], cmap='gray_r')
 
     # save plot to file
-    filename1 = './generated_plots/generated_plot_%s.png' % (model_name)
-    pyplot.savefig(filename1)
-    pyplot.close()
+    # filename1 = './generated_plots/generated_plot_%s.png' % (model_name)
+    # pyplot.savefig(filename1)
+    # pyplot.close()
 
     # evaluate the classifier model
     X, y = dataset
@@ -298,8 +298,8 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
             latent_dim, n_batch), ones((n_batch, 1))
         g_loss = gan_model.train_on_batch(X_gan, y_gan)
         # summarize loss on this batch
-        print('>%d, c[%.3f,%.0f], d[%.3f,%.3f], g[%.3f]'
-              % (i+1, c_loss, c_acc*100, d_loss1, d_loss2, g_loss))
+        # print('>%d, c[%.3f,%.0f], d[%.3f,%.3f], g[%.3f]'
+        #       % (i+1, c_loss, c_acc*100, d_loss1, d_loss2, g_loss))
         # evaluate the model performance
         if i == n_steps - 1:
             summarize_performance(i, g_model, c_model,
@@ -308,7 +308,7 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
 
 def evaluate_score(model, model_name, test_X, test_y):
     y_pred = model.predict(
-        test_X, test_y)
+        test_X)
 
     bac = bac_m(test_y, y_pred)
     f1_score = f1_m(test_y, y_pred)
