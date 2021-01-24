@@ -1,12 +1,10 @@
 import os
-import math
 import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import StratifiedShuffleSplit
 
 from matplotlib import image
-from matplotlib import pyplot
 
 from numpy import expand_dims
 from numpy import zeros
@@ -307,8 +305,12 @@ def train(g_model, d_model, c_model, gan_model, dataset, latent_dim, samples_per
 
 
 def evaluate_score(model, model_name, test_X, test_y):
-    y_pred = model.predict(
+    y_pred_proba = model.predict(
         test_X)
+
+    y_pred = []
+    for i in range (y_pred_proba.shape[0]):
+        y_pred.append(0 if y_pred_proba[i][0] > y_pred_proba[i][1] else 1)
 
     bac = bac_m(test_y, y_pred)
     f1_score = f1_m(test_y, y_pred)
